@@ -1,0 +1,1571 @@
+---
+title: "**Auditing an insurance fraud dataset**"
+output: html_document
+---
+
+### **MAIN OBJECTIVE**
+
+The objective of this document is to search for insights about the quality of the kaggle dataset found at <https://www.kaggle.com/datasets/arpan129/insurance-fraud-detection/data>. For that purpose we are going to explore each variable available on the dataset.
+
+### **NECESSARY LIBRARIES**
+
+Below are all the libraries that are going to be used through this notebook.
+
+```{r results = 'hide', warning = FALSE}
+library(ggplot2)
+library(lubridate)
+```
+
+### **DATA LOADING**
+
+```{r}
+# Setting the current directory to the one where the dataset is in
+setwd("C:\\Users\\riosa\\documents\\ucm\\cuarto\\segundo\\tfg")
+# Loading of the dataset
+insurance <- read.csv("insurance_claims.csv")
+```
+
+### **DATA EXPLORATION**
+
+```{r}
+insurance <- insurance[, -40] # Removal of the last column since it's empty
+dim(insurance)
+```
+The dataset has 1000 observations and 39 variables.
+Let's explore the variable names.
+```{r}
+names(insurance)
+```
+Before exploring each variable let's see if there are missing values in some of them.  
+With the code below, if zeros are obtained means that missing values aren't present in the corresponding variable.
+```{r}
+as.matrix(colSums(apply(X = insurance, MARGIN = 2, FUN = is.na)))
+```
+As can be seen the result is that no variable contains missing values.
+Now let's explore the content of each variable one by one.
+
+#### **1) Variable months_as_customer:**
+
+```{r}
+head(insurance$months_as_customer, 10)
+```
+It only takes whole values?
+```{r}
+sum(vapply(insurance$months_as_customer, typeof, character(1)) == "integer")
+```
+The result obtained is 1000, this is all the variable observations are of type integer.
+Since all the values of a vector in R should have the same type, the below code is equally useful.
+```{r}
+typeof(insurance$months_as_customer)
+```
+```{r}
+summary(insurance$months_as_customer)
+
+ggplot(insurance, aes(x = months_as_customer)) + geom_histogram(color = "white", fill = "seagreen") +
+  theme_light() + labs(title = "Histogram of months_as_customer", x = "value") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+479/12 # maximum in years
+276.2/12 # 3rd quartile in years
+199.5/12 # median in years
+115.8/12 # 1st quartile in years
+```
+The maxium value that takes this variable is 479 months, that is 39.9 years as a client of the same insurance company. Having into account that the usual minimum age for having a driving license in the USA is of 16 years, this value is completly plausible since in it's extremest case it would result in a client of 56 years of age. At the other side, the minimum number of months as a client is of zero, that is, clients that contracted a policy in less than the last 30 days (assuming the variable is using a "standarized" form of 30 days months), so there is neither a problem with this value. In either case, let's see how many observations take 0 for this variable:
+```{r}
+sum(insurance$months_as_customer == 0)
+which(insurance$months_as_customer == 0)
+```
+Only one observation in the dataset takes 0 months as it's antiquity as a client and it's located at the 498th row.
+Continuing with the general distribution of the variable, the first quantile is located at 115.8, i.e. the 25 % of the observations has been clients during 10 years or less. The median of the distribution is found at 199.5, that is, 50 % of the observations has been clients for 17 years or less, and the other 50 % of the clients has been in the company more than 17 years. Lastly, the third quartile (located at 276.2) tells us that 75 % of the clients has been insured with this company has much as 23 years. Looking at its histogram we can appreciate that its distribution seems like a bimodal one. This characteristic could be useful if lately we desire to discretize the variable.
+
+
+#### **2) Variable age:**
+
+```{r}
+head(insurance$age, 10)
+summary(insurance$age)
+# Histogram
+ggplot(insurance, aes(x = age)) + geom_histogram(color = "white", fill = "seagreen", binwidth = 1) +
+  theme_light() + labs(title = "Histogram of age", x = "value") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+# Boxplot
+ggplot(insurance, aes(x = age)) + geom_boxplot(color = "seagreen") + coord_flip() +
+  labs(title = "Boxplot of variable age", x = "value") + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+This variable contains the current age of the policy holder at the claim's moment. The minimum value observed is of 19 years and the maximum value registered is of 64, which seems a completly normal range of ages. The median value is located at 38 years, that is, 50 % of the observations take values as much as 38, and other 50 % take values bigger than 38. In the boxplot can be observed that there are two possible outliers in the variable. Let's find which values take those observations:
+```{r}
+# Upper wishker length
+44 + 1.5*(44 - 32)
+# Upper whisker goes from 44 to 62, let's see which observations are bigger than 62
+insurance$age[which(insurance$age > 62)]
+```
+There are only four observations that take values above the upper boxplot's wishker and only two different values as has been seen in the boxplot. Since these values don't seem to be specially abnormal, we're not going to worry more about them.
+
+Intuitively, is expected to be a positive correlation between the age and the months_as_customer variable, since it's foreseeable that clients with more age have been more years with the company.
+
+```{r}
+# Scatter plot
+ggplot(insurance, aes(age, months_as_customer)) + geom_point(color = "seagreen") +
+  theme_light() + labs(title = "age vs. months_as_customer", x = "age", y = "months_as_customer") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+cor(insurance$age, insurance$months_as_customer)
+```
+It looks that there is an strong positive correlation between both variables as was expected.
+Lastly, let's check if there exists weird observations like for example, cases where the client has been more years as a company's client than alive.
+```{r}
+# Are there observations with more months in the company than years alive?
+length(which(insurance$age*12 < insurance$months_as_customer))
+# And taking into account the 15 years that a person can't have a driving license?
+length(which(insurance$age*12 - 15*12 < insurance$months_as_customer))
+```
+No weird values are found, so let's assume this variable is ok, at least by now.
+
+#### **3) Variable policy_number:**
+
+```{r}
+head(insurance$policy_number, 10)
+typeof(insurance$policy_number)
+```
+We expect that there is only one single number for each row in this variable.
+```{r}
+length(unique(insurance$policy_number))
+```
+It's ok, so this variable isn't useful for modelling and will serve has an identifier for each observation.
+
+#### **4) Variable policy_bind_date:**
+
+```{r}
+head(insurance$policy_bind_date)
+typeof(insurance$policy_bind_date)
+```
+This variable contains dates and is of type character, so we need to change its type to date.
+```{r}
+insurance$policy_bind_date <- date(insurance$policy_bind_date)
+```
+Now that the variable has been transformed into date type let's see what range of dates it takes.
+```{r}
+range(insurance$policy_bind_date)
+```
+Now let's check how many different values it takes.
+```{r}
+length(table(insurance$policy_bind_date))
+```
+The variable takes 951 different values for 1000 total rows, that's 95 % of the observations take a unique date. Let's check how many times appear the most repeated dates.
+```{r}
+head(sort(table(insurance$policy_bind_date), decreasing = T), 10)
+```
+The most repeated observations appear only 3 times each one, so it don't look anything strange.
+
+The range of policy bind dates goes from 1990 to 2015. Let's check if, as can be expected, this variable is positively correlated with the variable age, since is reasonable to think that the older a client is, the bigger the probability that the client has been more years with the insurance company. For checking this we're going to transform the variable policy_bind_date from date type to numeric, obtaining lesser numbers when the date is older, if the positive relation were true, it will let us a negative-relation like plot.
+```{r}
+cor(as.numeric(insurance$policy_bind_date), insurance$age)
+# scatter plot
+ggplot(insurance, aes(as.numeric(policy_bind_date), age)) + geom_point(color = "seagreen") +
+  theme_light() + labs(title = "policy_bind_date vs. age", x = "date", y = "age") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+As can be seen in the above plot, this time the expected positive relation is not sustained by the data, and the scatter plot looks like completely random one. Also the correlation obtained is almost zero. 
+Another variable which can be expected to have a positive relation with policy_bind_date is the variable months_as_customer, since the older the customer is, the older the bind date of the policy should be. As before, we use the transformation from date to numeric and, if the relation were true, expect a negative-relation like plot.
+```{r}
+cor(as.numeric(insurance$policy_bind_date), insurance$months_as_customer)
+# scatter plot against months_as_customer
+ggplot(insurance, aes(as.numeric(policy_bind_date), months_as_customer)) + geom_point(color = "seagreen") +
+  theme_light() + labs(title = "policy_bind_date vs. months_as_customer", x = "date", y = "months_as_customer") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+Again the relation between the two variables seem inexistent, the plot points are sparced at random and the correlation is almost zero. Without more information, we can't conclude anything about the validity or the coherence of this variable, since by now, the date of the data obtained is unknown.
+
+#### **5) Variable policy_state:**
+
+```{r}
+unique(insurance$policy_state)
+```
+
+This variable takes only three different values and corresponds to the state the policy has been registered. Therefore it is a categorical variable and because of that, we're going to transform it into the correct type.
+```{r}
+insurance$policy_state <- factor(insurance$policy_state)
+# Relative frequencies barplot
+ggplot(as.data.frame(round(table(insurance$policy_state)/length(insurance$policy_state), 2)),
+       aes(x = Var1, y = Freq)) + geom_bar(stat = "identity", color = "seagreen", fill = "seagreen") +
+  labs(title = "Relative frequencies of variable policy_state", x = "state") + theme_classic() +
+  geom_text(aes(label = Freq), vjust = -0.3) + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+In the relative frequencies barplot, it can be seen that the state with more observations is Ohio with the 35 % of them, followed by Illinois with the 34 %, and lastly its Indiana with the 31 %. All three states are very similarly represented.
+
+#### **6) Variable policy_csl:**
+
+```{r}
+unique(insurance$policy_csl)
+```
+This variable makes reference to the combined single limits of the policy, which basically means the maximum amount the insurance will pay for all kind of claims combained. The values seems to be in thounsands. Again let's transform this variable from character to factor which is more appropriate.
+```{r}
+insurance$policy_csl <- factor(insurance$policy_csl)
+
+# Relative frequencies barplot
+ggplot(as.data.frame(round(table(insurance$policy_csl)/length(insurance$policy_csl), 2)),
+       aes(x = Var1, y = Freq)) + geom_bar(stat = "identity", color = "seagreen", fill = "seagreen") +
+  labs(title = "Relative frequencies of variable policy_csl", x = "value") + theme_classic() +
+  geom_text(aes(label = Freq), vjust = -0.3) + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+As with the previous variable, it seems that the three categories are very similarly balanced.
+
+#### **7) Variable policy_deductable:**
+
+This variable accounts for the sum that a policy holder must pay before the insurance company starts to take care of an incident expenses.
+```{r}
+unique(insurance$policy_deductable)
+```
+It only takes three different values, so again let's assume that it's a categorical variable and therefore transform its type.
+```{r}
+insurance$policy_deductable <- factor(insurance$policy_deductable)
+
+# Relative frequencies barplot
+ggplot(as.data.frame(round(table(insurance$policy_deductable)/length(insurance$policy_deductable), 2)),
+       aes(x = Var1, y = Freq)) + geom_bar(stat = "identity", color = "seagreen", fill = "seagreen") +
+  labs(title = "Relative frequencies of variable policy_deductable", x = "value") + theme_classic() +
+  geom_text(aes(label = Freq), vjust = -0.3) + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+Again the variable takes it's three categories in a very alike form, with its proportions rounding the 30 %.
+
+#### **8) Variable policy_annual_premium:**
+
+This variable accounts for the quantity that the policy holder must pay each year for being covered.
+
+```{r}
+head(insurance$policy_annual_premium)
+length(unique(insurance$policy_annual_premium))
+```
+It takes 991 different values, so this time we have a continuous variable.
+```{r}
+summary(insurance$policy_annual_premium)
+# Histogram
+ggplot(insurance, aes(x = policy_annual_premium)) + geom_histogram(color = "white", fill = "seagreen", binwidth = 60) +
+  theme_light() + labs(title = "Histogram of policy_annual_premium", x = "value") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+# Boxplot
+ggplot(insurance, aes(x = policy_annual_premium)) + geom_boxplot(color = "seagreen") + coord_flip() +
+  labs(title = "Boxplot of variable policy_annual_premium", x = "value") + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+The minimum value the variable takes is 433.3 dollars and the maximum is 2047.6 dollars, which don't look anything unexpectable, although in the boxplot it seems that several observations in the low side and in the upper side could be outliers. But, lacking more information, let's just let it like that.
+
+#### **9) Variable pumbrella_limit:**
+
+An umbrella limit is a feature of some insurance policies that provides additional excess coverage over the normal limits.
+
+```{r}
+head(insurance$umbrella_limit)
+length(unique(insurance$umbrella_limit))
+summary(insurance$umbrella_limit)
+```
+This variable only takes eleven different values. We see that it takes values from minus one million to ten million, which seems strange since it is reasonable to expect this variable to only take positive values. Let's check how many observations take negative values.
+```{r}
+length(insurance$umbrella_limit[which(insurance$umbrella_limit < 0)])
+```
+Only one observation takes a negative umbrella limit which reinforce the hypothesis that it's a badly codified value. Since this variable only take eleven different values, let's see the absolute frequencies of them.
+```{r}
+table(insurance$umbrella_limit)
+```
+No observation takes one million as its value and the next most plausible number could be 10000000 which is a really big quantity relative to the rest of the observations, so for no introducing any bias in the variable let's just put the negative observation as a missing.
+```{r}
+insurance$umbrella_limit[which(insurance$umbrella_limit < 0)] <- NA
+```
+Now let's see if there could exist relataion between the annual premium and the umbrella limit, in particular it could be expected to be correlated in a positive way, that is, higher annual premiums, take highesr umbrella limits. Let's focus only in the subset of observations that have an umbrella limit distinct than zero.
+```{r}
+subset <- which(insurance$umbrella_limit > 0)
+
+# Scatter plot
+ggplot(insurance[subset, ], aes(umbrella_limit, policy_annual_premium)) + geom_point(color = "seagreen") +
+  theme_light() + labs(title = "umbrella_limit vs. policy_annual_premium", x = "umbrella_limit", y = "policy_annual_premium") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+There don't seems to be a clear relation between both observations, each umbrella limit takes a wide range of annualities that don't distinct clearly of the others but in the number of observations.
+
+#### **10) Variable insured_zip:**
+
+This variable accounts the zip codes of the policy holders.
+```{r}
+head(insurance$insured_zip)
+# How many distinct zip codes there are?
+length(unique(insurance$insured_zip))
+```
+The variable has 995 different postal codes, so almost each observation have a different one.
+Usually the zip codes in the United States takes 5 numbers long, but in this observations they seems to have six. Let's check if all the zip codes in the dataset contain six digits.
+```{r}
+intLength <- function(number) {
+  # Inputs an integer number and returns the quantity of digits that it is formed on
+  # Example:
+  # Input: intLength(478965741455)
+  # Returns: 12
+  return(length(unlist(strsplit(as.character(number), ""))))
+}
+
+sum(vapply(X = insurance$insured_zip, FUN = intLength, FUN.VALUE = numeric(1)) == 6)
+```
+All the observations are six digits long, so it's impossible to check if the observed zip codes correspond to current zip codes of each state. Let's assume that a random number as been added at the end of each original zip code, maybe for anonymization reasons, even in that case, the first two digits should coincide with the first two (in some cases three), which are the ones that represent the state which belongs a particuar zip code. In the case of the state of Illinois this digits goes from 60 to 62. For the state of Indiana they go from 46 to 47, and in the case of Ohio they go from 43 to 45. Let's check if the observed two first digits of the zip codes coincide with the expected ones.
+```{r}
+firstTwo <- function(number) {
+  # Recives a six digit number and returns the first two digits.
+  # Any other number of 
+  # Example: 
+  # Input 478236
+  # Output 47
+  result <- numeric(1)
+  if (typeof(number) == "integer" & intLength(number) == 6) {
+    result <- (number - number%%10000)/10000
+  } else {
+    result <- -1
+  }
+  return(result)
+}
+
+checkZip <- function(code, state) {
+  # Input:
+  # code: a two digit integer
+  # state: a two letters character 
+  # Return: 1 if code and state are as expected and 0 otherwise
+  # Note: expected 43-45 for state "OH", 60-62 for state "IL", and 46-47 for
+  # state "IN".
+  # Example:
+  # Input: 43, "OH"
+  # Return: 1
+  result <- 0 
+  if (state == "OH" & (code >= 43 & code <= 45)) {
+    result <- 1
+  } else if (state == "IL" & (code >= 60 & code <= 62)) {
+    result <- 1
+  } else if (state == "IN" & (code >= 46 & code <= 47)) {
+    result <- 1
+  }
+  return(result)
+}
+
+# Auxiliar data.frame for checking if zip codes states coincide with the registered ones
+checkFrame <- data.frame(observed = vapply(X = insurance$insured_zip, FUN = firstTwo,
+                                           FUN.VALUE = numeric(1)), state = insurance$policy_state)
+
+# Check column calculation
+for (i in 1:dim(checkFrame)[1]) {
+  checkFrame$check[i] <- checkZip(checkFrame$observed[i], checkFrame$state[i])
+}
+
+# Results analysis
+head(checkFrame)
+table(checkFrame$check)
+```
+The result obtained indicates that only 334 of the observations have the state that would be the expected one by the first two cyphers of its zip code, so this could indicate a possible random assignation of the zip codes plus the incorrect quantity of digits as pointed before helps us to conclude that this variable should be useless.
+
+#### **11) Variable insured_sex:**
+
+```{r}
+table(insurance$insured_sex)
+```
+This variable only takes two different values, female and male. There are 74 more females than males in the dataset. Since it's a categorical variable, let's transform it as a factor. Also, let's recode its categories from "FEMALE" and "MALE", to 0 and 1.
+```{r}
+
+# Let's create a function to help us recoding the variable 
+recode <- function(value) {
+  # Converts a caracter value ("FEMALE" or "MALE") to 0 or 1. Anything else it will
+  # return -1.
+  # Input: A chacaracter string, "FEMALE" or "MALE".
+  # Output: 0 if "FEMALE", 1 if "MALE", -1 for the rest.
+  result <- -1 # -1 as default value
+  if (value == "FEMALE") {
+    result <- 0
+  } else if (value == "MALE") {
+    result <- 1
+  }
+  return(result)
+}
+
+# Recode the categories
+insurance$insured_sex <- unname(vapply(insurance$insured_sex, recode, numeric(1)))
+# Transform its type to factor
+insurance$insured_sex <- factor(insurance$insured_sex)
+# Result
+table(insurance$insured_sex)
+```
+#### **12) Variable insured_education_level:**
+
+```{r}
+head(insurance$insured_education_level)
+# Relative frequencies barplot
+ggplot(as.data.frame(round(table(insurance$insured_education_level)/length(insurance$insured_education_level), 2)),
+       aes(x = Var1, y = Freq)) + geom_bar(stat = "identity", color = "seagreen", fill = "seagreen") +
+  labs(title = "Relative frequencies of variable insured_education_level", x = "insured_education_level") + theme_classic() +
+  geom_text(aes(label = Freq), vjust = -0.3) + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+```
+This variable takes seven different categories, which refers to the highest completed level of studies. We could think of this variable as an ordinal one, but since there's not too clear which category has the highest rank, let's just let the vairables as factor without order.
+```{r}
+insurance$insured_education_level <- factor(insurance$insured_education_level)
+```
+Let's check now if the annual premium payed by the insured person could be related to the educational level of the insured person. Since higher levels of education usually tend to have higher levels of income that allow to own more expensive cars that also would require higher premiums from the insurance company.
+```{r}
+# Annual premium boxplots for each eduation level
+ggplot(insurance, aes(x = insured_education_level, y = policy_annual_premium)) + geom_boxplot(color = "seagreen")
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+As can be seen in the above plot, the higher premiums are obtained for the observations with "MD" as its education level, but the median and the third and first quartiles don't change too much across all the different education levels.
+
+#### **13) Variable insured_occupation:**
+
+```{r}
+length(unique(insurance$insured_occupation))
+```
+The variable accounts for 14 different occupations. Currently is character vector, so let's transform it into a factor.
+```{r}
+insurance$insured_occupation <- factor(insurance$insured_occupation)
+# Relative frequencies barplot
+ggplot(as.data.frame(round(table(insurance$insured_occupation)/length(insurance$insured_occupation), 2)),
+       aes(x = Var1, y = Freq)) + geom_bar(stat = "identity", color = "seagreen", fill = "seagreen") +
+  labs(title = "Relative frequencies of variable insured_occupation", x = "occupation") + theme_classic() +
+  geom_text(aes(label = Freq), hjust = 1.2) + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold")) + coord_flip()
+```
+
+Let's plot now the education level by ocupation to see if there are relevant diferences between the distinct occupations.
+```{r}
+# First let's confirm that all the occupations contain observations of all the education levels
+length(unique(insurance$insured_education_level))
+# There were 7 different education levels
+for (i in unique(insurance$insured_occupation)) {
+  print(length(unique(insurance[which(insurance$insured_occupation == i), "insured_education_level"])))
+}
+# Ok, all the categories in insured_occupation take all the categories in insured_education_level,
+# so let's continue with the data.frame creation.
+length(unique(insurance$insured_education_level))*length(unique(insurance$insured_occupation))
+# The dataset must have 7*14 = 98 rows
+# Let's create an auxiliar list and an auxiliar vector to create a data.frame for plotting an
+# stacked barplot.
+auxList <- lapply(levels(insurance$insured_occupation), rep, 7)
+occupation <- character(0)
+for (i in 1:length(auxList)) {
+  occupation <- c(occupation, unlist(auxList[i]))
+}
+# Data frame for use in the creation of the stacked barchart
+stackFrame <- data.frame(occupation, education = rep(levels(insurance$insured_education_level), 14), freqs = numeric(98))
+# Calculation of the frequencies (relatives to each occupation category)
+indexEnd <- 7 # Auxiliar variable for helping with rows selection
+for (i in unique(stackFrame$occupation)) {
+  absfreqs <- table(insurance$insured_education_level[which(insurance$insured_occupation == i)])
+  stackFrame$freqs[(indexEnd - 6):indexEnd] <- round(absfreqs/sum(absfreqs), 2)
+  indexEnd <- indexEnd + 7
+}
+# Resulting dataframe
+head(stackFrame, 10)
+
+ggplot(stackFrame, aes(fill=education, y=freqs, x=occupation)) + 
+  geom_bar(position="stack", stat="identity") + coord_flip() + 
+  labs(title = "Education level frequency by occupation", x = "occupation", y = "frequency") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+```
+
+In the above plot we can see the relative frequencies of the education level when segregated by occupation.
+
+#### **14) Variable insured_hobbies:**
+
+```{r}
+length(unique(insurance$insured_hobbies))
+```
+This variable contains 20 different hobbies.
+It's also a categorical variable, so let's transform its type to factor.
+```{r}
+insurance$insured_hobbies <- factor(insurance$insured_hobbies)
+
+# Absolute frequencies barplot
+ggplot(as.data.frame(table(insurance$insured_hobbies)),
+       aes(x = Var1, y = Freq)) + geom_bar(stat = "identity", color = "seagreen", fill = "seagreen") +
+  labs(title = "Relative frequencies of variable insured_hobbies", x = "hobbies") + theme_classic() +
+  geom_text(aes(label = Freq), hjust = -0.2) + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold")) + coord_flip()
+```
+
+We can see in the above plot that the most observed hobby is reading with 64 observations and that the less observed are basketball and cross-fit with 34 and 35 observations. All the other ones take values from 47 to 57.
+Now let's see the distribution by sex inside all the observed hobbies, so we can see if there are some that are more prevalent among one of both sexes.
+```{r}
+length(levels(insurance$insured_hobbies))*length(levels(insurance$insured_sex))
+# This time we need 20*2 = 40 rows
+auxList <- lapply(levels(insurance$insured_hobbies), rep, 2)
+hobbies <- character()
+for (i in 1:length(auxList)) {
+  hobbies <- c(hobbies, unlist(auxList[i]))
+}
+# Auxiliar dataframe for creating the stacked barplot
+stackFrame <- data.frame(hobbies, sex = rep(c("FEMALE", "MALE"), 20), freqs = numeric(40))
+# Calculating relative frequencies of sex for each hobby
+indexEnd <- 2
+for (i in unique(stackFrame$hobbies)) {
+  freqsh <- table(insurance$insured_sex[which(insurance$insured_hobbies == i)])
+  stackFrame$freqs[(indexEnd - 1):indexEnd] <- round(freqsh/sum(freqsh), 2)
+  indexEnd <- indexEnd + 2
+}
+
+# Result
+head(stackFrame, 10)
+
+ggplot(stackFrame, aes(fill=sex, y=freqs, x=hobbies)) + 
+  geom_bar(position="stack", stat="identity") + coord_flip() + 
+  labs(title = "Sex frequency by hobby type", x = "hobby", y = "frequency") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+In the above plot we can see that the biggest differences are seen in paintball, dancing, skydiving and kayaking with sensibly more women than men. At the other side are basketball, yachting, camping and polo with more men than women.
+
+#### **15) Variable insured_relationship:**
+
+```{r}
+head(insurance$insured_relationship)
+length(unique(insurance$insured_relationship))
+```
+This variable takes 6 unique values and is of character type, so let's transform it into a factor.
+```{r}
+insurance$insured_relationship <- factor(insurance$insured_relationship)
+
+# Relative frequencies barplot
+ggplot(as.data.frame(round(table(insurance$insured_relationship)/length(insurance$insured_relationship), 2)),
+       aes(x = Var1, y = Freq)) + geom_bar(stat = "identity", color = "seagreen", fill = "seagreen") +
+  labs(title = "Relative frequencies of variable insured_relationship", x = "relationship") + theme_classic() +
+  geom_text(aes(label = Freq), vjust = - 0.2) + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+This variable accounts the relation with other people included in the same policy. As can be seen in the plot all categories have a similar percetage with a range from 14 % to 18 % for all the categories.
+
+#### **16) Variable capital.gains:**
+
+```{r}
+head(insurance$capital.gains, 10)
+length(unique(insurance$capital.gains))
+```
+338 unique values, so let's assume that the variable it's a continuous one.
+```{r}
+summary(insurance$capital.gains)
+```
+It seems that at least 50 % of the observations take the value zero. Let's check how many of them are.
+```{r}
+table(insurance$capital.gains)[1]
+```
+50.8 % of the observations take the value zero. Let's plot now its histogram.
+```{r}
+# Histogram
+ggplot(insurance, aes(x = capital.gains)) + geom_histogram(color = "white", fill = "seagreen") +
+  theme_light() + labs(title = "Histogram of capital.gains", x = "value") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+Looks like maybe it would be a good idea to discretize this variable into intervals.
+Let's plot it again without the observations that take a zero value.
+```{r}
+length(unique(insurance$capital.gains[which(insurance$capital.gains > 0)]))
+length(insurance$capital.gains[which(insurance$capital.gains > 0)])
+head(sort(table(insurance$capital.gains[which(insurance$capital.gains > 0)]), decreasing = T), 10)
+```
+Now the variable takes 337 unique values out of 492. The most repited quantity is 46300.
+```{r}
+summary(insurance$capital.gains[which(insurance$capital.gains > 0)])
+# Histogram
+ggplot(insurance[which(insurance$capital.gains > 0), ], aes(x = capital.gains)) + 
+  geom_histogram(color = "white", fill = "seagreen", binwidth = 5000) +
+  theme_light() + labs(title = "Histogram of capital.gains", x = "value") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+Now the new histogram is bell-shaped with its mean and its median about 51000. Again in the plot is obtained a bar around zero because there are values too away from the fisrt quartile. Let's test if normallity can be assumed.
+```{r}
+ks.test(insurance$capital.gains[which(insurance$capital.gains > 0)], "pnorm",
+        mean = mean(insurance$capital.gains[which(insurance$capital.gains > 0)]),
+        sd = sd(insurance$capital.gains[which(insurance$capital.gains > 0)]))
+
+cat("mean:", c(mean(insurance$capital.gains[which(insurance$capital.gains > 0)]), "sd:",
+        sd(insurance$capital.gains[which(insurance$capital.gains > 0)])))
+```
+Yes, for this part of the variable (zero excluded), normallity can be acepted. It would be a normal distribution with a mean of 51069.31 and a standard deviation of 16317.44.
+
+#### **17) Variable capital.loss:**
+
+```{r}
+head(insurance$capital.loss, 10)
+length(unique(insurance$capital.loss))
+```
+This variable counts with 354 unique values.
+```{r}
+summary(insurance$capital.loss)
+```
+It takes a maximum value of 0, so all its values are zero or negative.
+```{r}
+# Histogram
+ggplot(insurance, aes(x = capital.loss)) + geom_histogram(color = "white", fill = "seagreen") +
+  theme_light() + labs(title = "Histogram of capital.loss", x = "value") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+With this variable the situation looks like the oposite to the previous one. Now zero has become a maximum for the variable. Let's plot the observations again, now without the observations that take zero as its value.
+```{r}
+# How many zeros there there?
+sort(table(insurance$capital.loss), decreasing = T)[1]
+```
+475 observations out of 1000 take 0 as its value.
+```{r}
+length(unique(insurance$capital.loss[which(insurance$capital.loss < 0)]))
+length(insurance$capital.loss[which(insurance$capital.loss < 0)])
+# Most frequent values
+head(sort(table(insurance$capital.loss[which(insurance$capital.loss < 0)]), decreasing = T), 10)
+```
+353 observations of 525 are unique.
+```{r}
+summary(insurance$capital.loss[which(insurance$capital.loss < 0)])
+# Histogram
+ggplot(insurance[which(insurance$capital.loss < 0), ], aes(x = capital.loss)) + 
+  geom_histogram(color = "white", fill = "seagreen", binwidth = 5000) +
+  theme_light() + labs(title = "Histogram of capital.loss", x = "value") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+
+ks.test(insurance$capital.loss[which(insurance$capital.loss < 0)], "pnorm",
+        mean = mean(insurance$capital.loss[which(insurance$capital.loss < 0)]),
+        sd = sd(insurance$capital.loss[which(insurance$capital.loss < 0)]))
+
+cat("mean:", c(mean(insurance$capital.loss[which(insurance$capital.loss < 0)]), "sd:", 
+        sd(insurance$capital.loss[which(insurance$capital.loss < 0)])))
+```
+As with the previous variable, once we omit the zeros the histogram shows clearly a bell-shape. The Kolmogorov-Smirnov test again result in the acceptance of the normality. So it would be a normal distribution with a mean of -51035.619 and a sd of 16317.44.
+
+Now let's check if there exists a relation between the variable capital.gains and the variable capital.loss. In the first place, let's check if the observations that take zero in capital.gains are the same that take zero in the variable capital.loss.
+```{r}
+length(which(insurance$capital.gains == 0))
+length(which(insurance$capital.loss == 0))
+```
+Both variables have a different quantity of zeros, so it's impossible that all coincide. Let's continue checking how many observations have zero in both variables.
+```{r}
+zeroposgain <- which(insurance$capital.gains == 0) # stores possitions with zeros in capital.gains
+zeroposloss <- which(insurance$capital.loss == 0) # stores possitions with zeros in capital.loss
+coincide <- logical(508) # auxiliar variable to check each element of the longer one in the shorter
+names(coincide) <- zeroposgain
+for (i in 1:508) {
+  if (sum(zeroposgain[i] == zeroposloss)) {
+    coincide[i] <- TRUE
+  }
+}
+
+table(coincide)
+```
+251 observations take zero in both variables.
+Since one variable takes negative values and the other positives, let's see if when summed, both variables cancel each other.
+```{r}
+sumcapital <- insurance$capital.gains + insurance$capital.loss # auxiliar variable for the sum
+summary(sumcapital)
+# Histogram of sumcapital
+ggplot(as.data.frame(sumcapital), aes(x = sumcapital)) + 
+  geom_histogram(color = "white", fill = "seagreen", binwidth = 5000) +
+  theme_light() + labs(title = "Histogram of sumcapital", x = "value") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+# Histogram of sumcapital without observations that take zero
+ggplot(data.frame("sumcapital" = sumcapital[which(sumcapital != 0)]), aes(x = sumcapital)) + 
+  geom_histogram(color = "white", fill = "seagreen", binwidth = 5000) +
+  theme_light() + labs(title = "Histogram of sumcapital", x = "value") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+Both variables don't cancel each other.
+
+#### **18) Variable incident_date:**
+
+```{r}
+head(insurance$incident_date)
+class(insurance$incident_date)
+```
+Since this variable contains dates and currently is of class character, let's transform it to date, so we can use the functionalities associated to this kind of objects.
+```{r}
+insurance$incident_date <- date(insurance$incident_date)
+range(insurance$incident_date)
+diff(range(insurance$incident_date))
+```
+The range of dates registered in the variable goes from the first of January of 2015 to the first of march of 2015, that's a time difference of 59 days.
+How many different dates there are?
+```{r}
+length(table(insurance$incident_date))
+```
+Only 60 different dates for 1000 observations. The 10 most repeated dates are:
+```{r}
+head(sort(table(insurance$incident_date), decreasing = T), 10)
+```
+All the difference between incident_date and policy_bind_date are positive?
+```{r}
+# Auxiliar dataframe for helping with the differences calculation
+checkDates <- data.frame(bind_date = insurance$policy_bind_date,
+                         incident_date = insurance$incident_date)
+
+# Now let's calculate each difference
+for (i in 1:dim(checkDates)[1]) {
+  checkDates$lapse[i] <- diff(c(checkDates$bind_date[i], checkDates$incident_date[i]))
+}
+
+# Result
+head(checkDates, 10)
+length(which(checkDates$lapse >= 0))
+```
+Only one observation have a negative time lapse between the bind date and the incident date. Let's see which observation is this one.
+```{r}
+checkDates[which(checkDates$lapse < 0), ]
+```
+Observation 579 has a negative time lapse between the bind date and the incident date. The negative lapse is only of 20 days. Without more information, maybe could be possible that a client has reported an incident after having been signed a posterior binding date. So let's not worry about this value.
+
+#### **19) Variable incident_type:**
+
+```{r}
+head(insurance$incident_type)
+length(table(insurance$incident_type))
+```
+This variable has 4 different values. Since it's a categorical variable and its current type is character, let's transform it into the appropriate type factor.
+```{r}
+# Transform into factor
+insurance$incident_type <- factor(insurance$incident_type)
+# Relative frequencies barplot
+ggplot(as.data.frame(round(table(insurance$incident_type)/length(insurance$incident_type), 2)),
+       aes(x = Var1, y = Freq)) + geom_bar(stat = "identity", color = "seagreen", fill = "seagreen") +
+  labs(title = "Relative frequencies of variable incident_type", x = "incident") + theme_classic() +
+  geom_text(aes(label = Freq), vjust = -0.3) + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+The most observed categories are multi-vehicle-collision and single-vehicle-collision with the 42 % and the 40 % of the observations. The other 18 % of the observations are divided almsot equally berween parked-car and vehicle-theft categories.
+
+Can be capital.loss related with incident_type? Let's use its boxplot for checking the differences in the distribution of capital.loss among all the kinds of incident type.
+```{r}
+# Boxplot (zeros included)
+ggplot(insurance, aes(x = incident_type, y = capital.loss)) + geom_boxplot(color = "seagreen") +
+  labs(title = "Boxplot of capital loss by incident type", x = "incident type", y = "capital loss") + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+When zeros included in the capital loss distribution can be observed that the lowest median it's finded at Parked Car, i.e. bigger median capital losses. But also in this category is present the shorter lower whisker, so less extreme observations are found. At the other side, the longer lower whisker it's found in the category Multi-vehicle-Collision, that is, the bigger capital losses registered are found in this category.
+
+```{r}
+# Boxplot (zeros excluded)
+ggplot(insurance[which(insurance$capital.loss < 0), ], aes(x = incident_type, y = capital.loss)) +
+  geom_boxplot(color = "seagreen") +
+  labs(title = "Boxplot of capital loss by incident type", x = "incident type", y = "capital loss") + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+When the zeros of the variable are excluded the highest median (less capital losses) still registered in the incident vehicle-theft. Also the most extreme observations still (higher or lower) observed in the category Multi-vehicle-Collision.
+Let's explore now the behaviour of the variable capital.gains when explored for each incident type.
+```{r}
+# Boxplot (zeros included)
+ggplot(insurance, aes(x = incident_type, y = capital.gains)) + geom_boxplot(color = "seagreen") +
+  labs(title = "Boxplot of capital gains by incident type", x = "incident type", y = "capital gain") + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+```
+
+When zeros are not excluded from the variable, the higher mediean is obvserved in the category multi-vehicle-collision, and the longer whiskers (that is the highest values) are also observed in multi-vehicle-collision and the category vehicle-theft.
+
+```{r}
+# Boxplot (zeros excluded)
+ggplot(insurance[which(insurance$capital.gains > 0), ], aes(x = incident_type, y = capital.gains)) +
+  geom_boxplot(color = "seagreen") +
+  labs(title = "Boxplot of capital gains by incident type", x = "incident type", y = "capital gain") + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+When excluding the observations with zeros we see that the category with the highest median and the longest whiskers its again the category multi-vehicle-collision.
+
+#### **20) Variable collision_type:**
+
+```{r}
+head(insurance$collision_type, 10)
+table(insurance$collision_type)
+```
+Again we have a categorical variable that should be re-typed as a factor, but this time we can observe that a category "?" is present. This probably could mean that this observations are missing so they need to be converted into R's way of dealing with missing values, i.e. NA. Provisionally, let's replace this observations with the string "NA" instead of NA, until we know a little more about the variable. Also let's postpone it's transformation into factor type. 
+
+```{r}
+# Replacing "?" by "NA"
+insurance$collision_type <- replace(insurance$collision_type, which(insurance$collision_type == "?"), "NA")
+
+# Relative frequencies barplot
+ggplot(as.data.frame(round(table(insurance$collision_type)/length(insurance$collision_type), 2)),
+       aes(x = Var1, y = Freq)) + geom_bar(stat = "identity", color = "seagreen", fill = "seagreen") +
+  labs(title = "Relative frequencies of variable collision_type", x = "type") + theme_classic() +
+  geom_text(aes(label = Freq), vjust = -0.3) + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+The category with more observations is Rear-Collision with the 29 %, next cames Side-Collision with the 28 % and last, Front-COllision with the 25 % of the observations. The supposed missing values category occupies the 18 % of the dataset.
+Let's now plot the distribution of the collisions for each incident type.
+
+```{r}
+# How many rows we need?
+length(unique(insurance$incident_type))*length(unique(insurance$collision_type))
+# Auxiliar variable to create the incident column in the following dataframe
+auxIncident <- lapply(levels(insurance$incident_type), rep, 4)
+incident <- character()
+for (i in 1:length(auxIncident)) {
+  incident <- c(incident, unlist(auxIncident[i]))
+}
+# Auxiliar dataframe for the plot
+stackFrame <- data.frame(incident, collision = rep(unique(insurance$collision_type), 4),
+                         freqs = numeric(16))
+
+# Calculating the last column of the dataframe
+for (i in levels(insurance$incident_type)) {
+  sumfreqsc <- sum(table(insurance$collision_type[which(insurance$incident_type == i)]))
+  for (j in unique(insurance$collision_type)) {
+    freqsc <- table(insurance$collision_type[which(insurance$incident_type == i & insurance$collision_type == j)])
+    if (length(freqsc > 0)) {
+      stackFrame[which(stackFrame$incident == i & stackFrame$collision == j), "freqs"] <- freqsc/sumfreqsc
+    }
+  }
+}
+
+# Result
+head(stackFrame)
+
+# Stacked barplot
+ggplot(stackFrame, aes(fill=collision, y=freqs, x=incident)) + 
+  geom_bar(position="stack", stat="identity") + coord_flip() + 
+  labs(title = "Collision type by incident type", x = "incident", y = "frequency") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+This time we can see that the category renamed as "NA" is only taken by observations whose incident type is Vehicle Theft or Parked Car, those seems situations where it's impossible to know the type of colission because there are no witnesses or more likely there hasn't been a collision at all (for example, someone scratches the paint of the car with a key, or someone substracts the car and it doesn't appear anymore without collisioning with anything). So let's rename again this category to "unknown", since we believe there are no missing properly missing values, and imputation with the other two categories would be misleading. Lastly let's transform the variable to factor.
+```{r}
+insurance$collision_type <- replace(insurance$collision_type, which(insurance$collision_type == "NA"), "unknown")
+insurance$collision_type <- factor(insurance$collision_type)
+table(insurance$collision_type)
+```
+
+#### **21) Variable incident_severity:**
+
+```{r}
+head(insurance$incident_severity)
+length(table(insurance$incident_severity))
+```
+As can be seen, this variable also takes character values of only 4 different types. So let's convert it to factorial.
+```{r}
+insurance$incident_severity <- factor(insurance$incident_severity)
+
+# Relative frequencies barplot
+ggplot(as.data.frame(round(table(insurance$incident_severity)/length(insurance$incident_severity), 2)),
+       aes(x = Var1, y = Freq)) + geom_bar(stat = "identity", color = "seagreen", fill = "seagreen") +
+  labs(title = "Relative frequencies of variable incident_severity", x = "incident") + theme_classic() +
+  geom_text(aes(label = Freq), vjust = -0.3) + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+The most observed category is Minor Damage with the 35 % of the observations, followed by Major Damage and Total Loss, each with a 28 % of the observations. Lastly it's the category Trivial Damage with the 9 % of the observations. 
+Now let's check the results obtained when we compare each severity by incident type.
+```{r}
+# Let's create again an auxiliar data.frame for creating the stacked barplot.
+# How many observations we need?
+length(levels(insurance$incident_severity))*length(levels(insurance$incident_severity))
+# Auxiliar variable for creating the first column of the dataframe
+auxList <- lapply(levels(insurance$incident_type), FUN = rep, 4)
+incident <- character() # This will be the first column of the dataframe
+for (i in 1:length(auxList)) {
+  incident <- c(incident, unlist(auxList[i]))
+}
+# Create the dataframe
+stackFrame <- data.frame(incident, severity = rep(levels(insurance$incident_severity), 4),
+                         freqs = numeric(16))
+# Calculate the frequencies
+indexEnd <- 4
+for (i in levels(insurance$incident_type)) {
+  freqss <- table(insurance$incident_severity[which(insurance$incident_type == i)])
+  stackFrame$freqs[(indexEnd - 3):indexEnd] <- freqss/sum(freqss)
+  indexEnd <- indexEnd + 4
+}
+
+# Result
+head(stackFrame)
+
+# Stacked barplot
+ggplot(stackFrame, aes(fill=severity, y=freqs, x=incident)) + 
+  geom_bar(position="stack", stat="identity") + coord_flip() + 
+  labs(title = "Incident severity by incident type", x = "incident", y = "frequency") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+We can see in the above plot that observations that take the categories Vehicle Theft and Parked Car (the ones without known collision type) only take the categories Minor and Trivial Damage for the variable incident severity, both of them with almost the same percentage (around 50 %), this seems to agree with the results obtained in the variable collision_type. For the other types of incident, the percentage rounds the 30 % for the three severity categories.
+
+Let's now check the distributions of capital loss when segregated by incident severity.
+```{r}
+# Boxplot (zeros included)
+ggplot(insurance, aes(x = incident_severity, y = capital.loss)) +
+  geom_boxplot(color = "seagreen") +
+  labs(title = "Boxplot of capital loss by incident severity", x = "incident severity", y = "capital loss") + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+```
+
+When observations with zero capital loss are included we see that the median value for the categories Major Damage and Trivial Damage are extremelly low, which is specially surprising in the case of the category Major Damage. Also it's surprising that the lowest values are found under the category Minor Damage.
+Let's do again the boxplots now without having into account the observations with zeros observed.
+
+```{r}
+# Boxplot (zeros excluded)
+ggplot(insurance[which(insurance$capital.loss < 0), ], aes(x = incident_severity, y = capital.loss)) +
+  geom_boxplot(color = "seagreen") +
+  labs(title = "Boxplot of capital loss by incident severity", x = "incident severity", y = "capital loss") + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+Now we can see that the four medians obtained are very alike being the lowest one that of the category Total Loss. Now we see more clearly that an outlier could exist under the category Minor Damage, having the lowest observation registered for the whole dataset. It's also surprising that the lowest capital loss observed under the category Trivial Damage it's only around  10000 dollars away of the lowest one under the category Total Loss.
+Let's try to know a little more about the possible outlier under the category Minor Damage.
+```{r}
+# Some more quantiles...
+quantile(insurance$capital.loss[which(insurance$incident_severity == "Minor Damage")], seq(0, 0.1, 0.01))
+# How many observations are less than the first percentile?
+length(which(insurance$capital.loss < -90147 & insurance$incident_severity == "Minor Damage"))
+# Let's see the 4 lowert values 
+sort(insurance$capital.loss[which(insurance$capital.loss < -90147 & insurance$incident_severity == "Minor Damage")])
+```
+There is a difference of 17500 dollars between the lowest and the second lowest capital loss when the severity of the incident is acounted as Minor Damage.
+
+#### **22) Variable authorities_contacted:**
+
+```{r}
+head(insurance$authorities_contacted)
+length(table(insurance$authorities_contacted))
+```
+Again we have a character variable that takes only 5 different values, so let's transform it into a factor variable.
+```{r}
+insurance$authorities_contacted <- factor(insurance$authorities_contacted)
+
+# Relative frequencies barplot
+ggplot(as.data.frame(round(table(insurance$authorities_contacted)/length(insurance$authorities_contacted), 2)),
+       aes(x = Var1, y = Freq)) + geom_bar(stat = "identity", color = "seagreen", fill = "seagreen") +
+  labs(title = "Relative frequencies of variable authorities_contacted", x = "authority") + theme_classic() +
+  geom_text(aes(label = Freq), vjust = -0.3) + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+We can see in the above plot that the most contacted authority is the police with the 29 % of the observations. Next are categories Fire, Ambulance and Other, each one with around the 20 % of the observations. Lastly we encounter the category None with the 9 % of the observations.
+Let's now obvserve the distribution of the severity by the kind of authority contacted.
+```{r}
+# How many observations we need?
+length(levels(insurance$authorities_contacted))*length(levels(insurance$incident_severity))
+# Auxiliar list for creating the first column of the dataframe
+auxList <- lapply(levels(insurance$authorities_contacted), rep, 4)
+authority <- character() # First column of the data.frame
+for (i in 1:length(auxList)) {
+  authority <- c(authority, unlist(auxList[i]))
+}
+
+# Auxiliar dataframe for creating the plot
+stackFrame <- data.frame(authority, severity = rep(levels(insurance$incident_severity), 5),
+                         freqs = numeric(20))
+
+# Calculating the frequencies
+indexEnd <- 4
+for (i in levels(insurance$authorities_contacted)) {
+  freqsa <- table(insurance$incident_severity[which(insurance$authorities_contacted == i)])
+  stackFrame$freqs[(indexEnd - 3):indexEnd] <- freqsa/sum(freqsa)
+  indexEnd <- indexEnd + 4
+}
+
+# Result
+head(stackFrame)
+
+# Stacked barplot
+ggplot(stackFrame, aes(fill=severity, y=freqs, x=authority)) + 
+  geom_bar(position="stack", stat="identity") + coord_flip() + 
+  labs(title = "Incident severity by authority contacted", x = "authority", y = "frequency") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+```
+
+In the plot obtained we can see that when the authority contacted is none all the observations are of trivial or minor damage what agrees with the logically expected. When fire, ambulance or other is called can be seen that the severity observed can be of minor damage, major or a total loss, but not trivial. Lastly when the police is contacted, the severity can be of any grade, being more observed the ones with minor damage.
+
+#### **23) Variable incident_state:**
+
+```{r}
+head(insurance$incident_state)
+length(table(insurance$incident_state))
+```
+Character variable with only seven different values, so let's transform it into a factor variable.
+```{r}
+insurance$incident_state <- factor(insurance$incident_state)
+
+# Relative frequencies barplot
+ggplot(as.data.frame(round(table(insurance$incident_state)/length(insurance$incident_state), 2)),
+       aes(x = Var1, y = Freq)) + geom_bar(stat = "identity", color = "seagreen", fill = "seagreen") +
+  labs(title = "Relative frequencies of variable incident_state", x = "state") + theme_classic() +
+  geom_text(aes(label = Freq), vjust = -0.3) + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+As can be seen in the above plot, the most prevalent states in the observations are New York, South Carolina and West Virginia, with percentages above the 20 % each one. Next to them are Virginia and North Carolina both with 11 % of the observations. Lastly are the states of Pensilvania and Ohio, with the 3 % and the 2 % of the observations respectively.
+
+#### **24) Variable incident_city:**
+
+```{r}
+head(insurance$incident_city)
+length(table(insurance$incident_city))
+```
+Again, a chatacter variable this time with 7 different values, so let's also transform it into a factor.
+```{r}
+insurance$incident_city <- factor(insurance$incident_city)
+
+# Relative frequencies barplot
+ggplot(as.data.frame(round(table(insurance$incident_city)/length(insurance$incident_city), 2)),
+       aes(x = Var1, y = Freq)) + geom_bar(stat = "identity", color = "seagreen", fill = "seagreen") +
+  labs(title = "Relative frequencies of variable incident_city", x = "city") + theme_classic() +
+  geom_text(aes(label = Freq), vjust = -0.3) + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+All cities have a similar percentage of appearance between the 12 % and the 16 %.
+Let's check in what states appear each city.
+```{r}
+# Frequencies of appearance of each city in each of the states
+for (i in levels(insurance$incident_city)) {
+  cat(i, "frequencies:\n")
+  print(table(insurance$incident_state[which(insurance$incident_city == i)]))
+  cat("--------------------\n")
+}
+```
+We can see above that all cities appear in all the states, which is a typical thing of the cities of the United States (to be repeated across several states). But when search for example about Columbus city in Virginia or in South Carolina in seems to not exist at all, so by the time, it's not clear if this variable can be disloyal to reallity, misscoded or something.
+
+#### **25) Variable incident_location:**
+
+```{r}
+head(insurance$incident_location)
+length(unique(insurance$incident_location))
+```
+The variable consist of character values all of which are different for each observation, so this variable looks like hardly useful for modelling. Further, if we try to search about some direction, it's easy to find some that didn't return any results, for example when searching for:
+```{r}
+insurance[which(insurance$incident_location == "7121 Francis Lane"), c("incident_location", "incident_city", "incident_state")]
+```
+The only references obtained related with this direction are copies of this same dataset.
+
+#### **26) Variable incident_hour_of_the_day:**
+
+```{r}
+
+head(insurance$incident_hour_of_the_day)
+length(unique(insurance$incident_hour_of_the_day))
+```
+All the hours have representation in the dataset. Let's explore their frequencies.
+```{r}
+# Relative frequencies barplot
+ggplot(as.data.frame(round(table(insurance$incident_hour_of_the_day)/length(insurance$incident_hour_of_the_day), 2)),
+       aes(x = Var1, y = Freq)) + geom_bar(stat = "identity", color = "seagreen", fill = "seagreen") +
+  labs(title = "Relative frequencies of variable incident_hour_of_the_day", x = "hour") + theme_classic() +
+  geom_text(aes(label = Freq), hjust = 1.3) + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold")) + coord_flip()
+
+```
+
+The percentage of observaitons for each category only varies inside three different values 3, 4 and 5 %. Seems worth of mention that hour ranges with tipically low traffic affluency, like three and four in the morning, obtained the same percentages as the range from 16:00 to 17:00, the hour of exit in many jobs, so there must be more traffic.
+
+#### **27) Variable number_of_vehicles_involved:**
+
+```{r}
+head(insurance$number_of_vehicles_involved)
+unique(insurance$number_of_vehicles_involved)
+```
+This variable only takes four different values and since there is an order between them, let's transform its type into an order factor.
+```{r}
+insurance$number_of_vehicles_involved <- factor(insurance$number_of_vehicles_involved, ordered = T)
+
+# Relative frequencies barplot
+ggplot(as.data.frame(round(table(insurance$number_of_vehicles_involved)/length(insurance$number_of_vehicles_involved), 2)),
+       aes(x = Var1, y = Freq)) + geom_bar(stat = "identity", color = "seagreen", fill = "seagreen") +
+  labs(title = "Relative frequencies of variable number_of_vehicles_involved", x = "number of vehicles") + theme_classic() +
+  geom_text(aes(label = Freq), vjust = -0.5) + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+58 % of the observations registered only one vehicle involved, 36 % involved three vehicles, and only a 3 % involved two or four vehicles.
+Let's check now the distribution of incident_type by number of vehicles involved.
+```{r}
+# How many rows we need?
+length(levels(insurance$incident_type))*length(levels(insurance$number_of_vehicles_involved))
+
+# Auxiliar variable  for creating the first column of the dataframe needed for the stacked barplot
+auxList <- lapply(levels(insurance$number_of_vehicles_involved), rep, 4)
+vehicles <- character() # First column of the dataframe
+for (i in 1:length(auxList)) {
+  vehicles <- c(vehicles, unlist(auxList[i]))
+}
+
+# Auxiliar dataframe for the plot
+stackFrame <- data.frame(vehicles, incident = rep(levels(insurance$incident_type), 4),
+                         freqs = numeric(16))
+
+# Calculation of the frequencies
+indexEnd <- 4
+for (i in levels(insurance$number_of_vehicles_involved)) {
+  freqsv <- table(insurance$incident_type[which(insurance$number_of_vehicles_involved == i)])
+  stackFrame$freqs[(indexEnd - 3):indexEnd] <- freqsv/sum(freqsv)
+  indexEnd <- indexEnd + 4
+}
+
+# Result
+head(stackFrame)
+
+# Stacked barplot
+ggplot(stackFrame, aes(fill = incident, y = freqs, x = vehicles)) + 
+  geom_bar(position="stack", stat="identity") + coord_flip() + 
+  labs(title = "Incident type by number of vehicles involved", x = "number of vehicles", y = "frequency") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+As can be seen in the above plot, when the number of vehicles involved it's two, three or four, the incident registered is always a multi-vehicle collision, and only when the number of vehicles involved is 1 the incident registered belongs to any of the other three categories, being the most observed single vehicle collision.
+
+#### **28) Variable property_damage:**
+
+```{r}
+table(insurance$property_damage)
+```
+This variable takes three categories, one of them being again "?". This time makes sense that only two categories take place and the rest of the values were simply missing, since there only can have been property damage or not, if it's unknown it means that the information is missing, and not for example like in collision type that could have mean that some collision take place but we don't know how it was because of a lack of witnesses. So let's replace all the "?" values for NA, and transform the variable into factor.
+```{r}
+insurance$property_damage <- replace(insurance$property_damage, which(insurance$property_damage == "?"), NA)
+insurance$property_damage <- factor(insurance$property_damage)
+
+# Relative frequencies barplot
+ggplot(as.data.frame(round(table(insurance$property_damage)/length(insurance$property_damage), 2)),
+       aes(x = Var1, y = Freq)) + geom_bar(stat = "identity", color = "seagreen", fill = "seagreen") +
+  labs(title = "Relative frequencies of variable property_damage", x = "property damage") + theme_classic() +
+  geom_text(aes(label = Freq), vjust = -0.5) + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+100*sum(is.na(insurance$property_damage))/1000
+```
+
+After reclassifying the "?" observations into NA's, we have that 34 % of the non-missing observations take the category NO, and 30 % take the category YES. The proportion of missing values ascends to 36 %, which still well lower than the 50 %, so this makes this variable a good candidate for being imputed.
+
+#### **29) Variable bodily_injuries:**
+
+```{r}
+unique(insurance$bodily_injuries)
+```
+We have a variable that only takes three different values, and seems obvious that there exists an order between them, so let's transform it to an ordered factor.
+```{r}
+insurance$bodily_injuries <- factor(insurance$bodily_injuries, ordered = T)
+
+# Relative frequencies barplot
+ggplot(as.data.frame(round(table(insurance$bodily_injuries)/length(insurance$bodily_injuries), 2)),
+       aes(x = Var1, y = Freq)) + geom_bar(stat = "identity", color = "seagreen", fill = "seagreen") +
+  labs(title = "Relative frequencies of variable bodily_injuries", x = "bodily injuries") + theme_classic() +
+  geom_text(aes(label = Freq), vjust = -0.5) + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+```
+
+The three categories take almost the same percetage of observations.
+Let's see now the distribution obtained when incident severity is observed for each bodily injury category.
+```{r}
+# How many rows we need?
+length(levels(insurance$bodily_injuries))*length(levels(insurance$incident_severity))
+# Auxiliar variable to obtain the first column of the dataframe for the stacked barplot
+auxList <- lapply(levels(insurance$bodily_injuries), rep, 4)
+b_injuries <- character() # First column for the dataframe
+for (i in 1:length(auxList)) {
+  b_injuries <- c(b_injuries, unlist(auxList[i]))
+}
+
+# Auxiliar dataframe for the stacked barplot
+stackFrame <- data.frame(b_injuries, severity = rep(levels(insurance$incident_severity), 3),
+                         freqs = numeric(12))
+
+# Calculation of the frequencies
+indexEnd <- 4
+for (i in levels(insurance$bodily_injuries)) {
+  freqss <- table(insurance$incident_severity[which(insurance$bodily_injuries == i)])
+  stackFrame$freqs[(indexEnd - 3):indexEnd] <- freqss/sum(freqss)
+  indexEnd <- indexEnd + 4
+}
+
+# Result 
+head(stackFrame)
+
+# Stacked barplot
+ggplot(stackFrame, aes(fill = severity, y = freqs, x = b_injuries)) + 
+  geom_bar(position="stack", stat="identity") + coord_flip() + 
+  labs(title = "Incident severity by bodily injuries", x = "bodily injuries", y = "frequency") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+Surprisingly, the severity of the incidents are almost represented equally across all the different quantities of bodily injuries. This distributions also almost coincide with the observed for the complete dataset.
+
+#### **30) Variable witnesses:**
+
+```{r}
+unique(insurance$witnesses)
+```
+Again we have an ordinal variable, so let's transform it into the correct type.
+```{r}
+insurance$witnesses <- factor(insurance$witnesses, ordered = T)
+```
+
+Almost all four categories take the same percentage of observations (around 25 %).
+Let's check now if efectivelly, when the collision type is unknown there are no witnesses.
+```{r}
+# Checking if the collision type and the number of witnesses are related.
+for (i in levels(insurance$witnesses)) {
+  cat("Witnesses: ", i, "\n")
+  print(table(insurance$collision_type[which(insurance$witnesses == i)]))
+  cat("-----------------------\n")
+}
+
+# Stacked barplot of collision type by number of witnesses
+# How many rows are needed?
+length(levels(insurance$witnesses))*length(levels(insurance$collision_type))
+# Auxiliar variable for creating the first row of the dataframe for stacked barplot
+auxList <- lapply(levels(insurance$witnesses), rep, 4)
+witnesses <- character()
+for (i in 1:length(auxList)) {
+  witnesses <- c(witnesses, unlist(auxList[i]))
+}
+# Auxiliar data.frame
+stackFrame <- data.frame(witnesses, collision = rep(levels(insurance$collision_type), 4), 
+                         freqs = numeric(16))
+
+# Calculation of the frequencies
+indexEnd <- 4
+for (i in levels(insurance$witnesses)) {
+  freqsw <- table(insurance$collision_type[which(insurance$witnesses == i)])
+  stackFrame$freqs[(indexEnd - 3):indexEnd] <- freqsw/sum(freqsw)
+  indexEnd <- indexEnd + 4
+}
+
+# Result 
+head(stackFrame)
+
+# Stacked barplot
+ggplot(stackFrame, aes(fill = collision, y = freqs, x = witnesses)) + 
+  geom_bar(position="stack", stat="identity") + coord_flip() + 
+  labs(title = "Collision type by number of witnesses", x = "collision type", y = "frequency") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+Contrary to what could be expected, the unknown category is more prevalent when the number of witnesses registered are 1 or 3 than when they are 0.
+
+#### **31) Variable witnesses:**
+
+```{r}
+unique(insurance$police_report_available)
+```
+Again we have a character variable that should be dichotomous in nature but with one of its values as "?". This strongly signals that those values must be reclassified as missing. Also let's transform the variable into a factor.
+```{r}
+insurance$police_report_available <- replace(insurance$police_report_available,
+                                             which(insurance$police_report_available == "?"), NA)
+
+insurance$police_report_available <- factor(insurance$police_report_available)
+
+# Relative frequencies barplot
+ggplot(as.data.frame(round(table(insurance$police_report_available)/length(insurance$police_report_available), 2)),
+       aes(x = Var1, y = Freq)) + geom_bar(stat = "identity", color = "seagreen", fill = "seagreen") +
+  labs(title = "Relative frequencies of variable police_report_available", x = "police report available") + theme_classic() +
+  geom_text(aes(label = Freq), vjust = -0.5) + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+100*sum(is.na(insurance$police_report_available))/1000
+```
+
+As can be seen in the above plot, 34 % of the observations have no police report available and the 31 % have it. The percentage of missing values in the variable is of 34.3 %.
+Let's check how the frequencies of the variable collision type are distributed for both categories.
+```{r}
+for (i in levels(insurance$police_report_available)) {
+  freqsp <- table(insurance$collision_type[which(insurance$police_report_available == i)])
+  cat("police report available: ", i, "\n")
+  print(freqsp/sum(freqsp))
+  cat("---------------------------------------------------------------\n")
+}
+```
+
+When the report is not available the percentage of unknown collisions is increased in a 31 %.
+
+#### **32) Variable total_claim_amount:**
+
+```{r}
+1000 - length(unique(insurance$total_claim_amount))
+```
+237 values are repeated.
+Ten most repeated values:
+```{r}
+head(sort(table(insurance$total_claim_amount), decreasing = T), 10)
+```
+Let's now plot its histogram.
+```{r}
+# Histogram
+ggplot(insurance, aes(x = total_claim_amount)) + 
+  geom_histogram(color = "white", fill = "seagreen", binwidth = 3000) +
+  theme_light() + labs(title = "Histogram of total claim amount", x = "value") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+The histogram looks like the one of a bimodal distribution, this property could be useful if we want to divide the variable into several intevals.
+
+```{r}
+summary(insurance$total_claim_amount)
+# Boxplot
+ggplot(insurance, aes(x = total_claim_amount)) + geom_boxplot(color = "seagreen") + coord_flip() +
+  labs(title = "Boxplot of variable total_claim_amount", x = "value") + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+The median it's found at 58055, the first quartile at 41813 while the minimum value is 100, which seems pretty far. In the upperside of the boxplot can be seen that is a possible outlier.
+Let's see how many observations are there.
+```{r}
+insurance$total_claim_amount[which(insurance$total_claim_amount > 70593 + 1.5*(70593 - 41813))]
+```
+Only one observation exceeds the upper whisker.
+Now let's see how appart it is of the nearest observations:
+```{r}
+head(sort(insurance$total_claim_amount, decreasing = T))
+```
+The outlier it's only a 2.31 % bigger than the nearest observation (112320), and a 5.94 % of the second nearest.
+This variable should be the sum of the other claim variables, let's check it.
+```{r}
+checkTotal <- data.frame(injury = insurance$injury_claim, property = insurance$property_claim,
+                         vehicle = insurance$vehicle_claim, total = insurance$total_claim_amount,
+                         claimsums = integer(1000), check = logical(1000))
+
+# Calculate the sums
+for (i in 1:dim(checkTotal)[1]) {
+  checkTotal$claimsums[i] <- sum(checkTotal[i, 1:3])
+}
+# Check if total and sum are equal
+for (i in 1:dim(checkTotal)[1]) {
+  if (checkTotal$total[i] == checkTotal$claimsums[i]) {
+    checkTotal$check[i] <- T
+  }
+}
+
+# Result
+head(checkTotal)
+sum(checkTotal$check)
+```
+It's ok for all rows.
+
+#### **33) Variable injury_claim:**
+
+```{r}
+1000 - length(unique(insurance$injury_claim))
+```
+The variable contains 362 repeated values.
+The ten most repeated are:
+```{r}
+head(sort(table(insurance$injury_claim), decreasing = T), 10)
+```
+Here 25 observations take the value zero, so no injury claim was filled for this observations.
+Let's plot its histogram.
+```{r}
+summary(insurance$injury_claim)
+# Histogram
+ggplot(insurance, aes(x = injury_claim)) + 
+  geom_histogram(color = "white", fill = "seagreen", binwidth = 900) +
+  theme_light() + labs(title = "Histogram of injury_claim", x = "value") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+The distribution of the variable again looks like a multimodal one.
+Let's analyze now the distribution of injury_claim when segregated by the incident severity.
+```{r}
+# Boxplot by incident_severity
+ggplot(insurance, aes(x = injury_claim, y = incident_severity)) + geom_boxplot(color = "seagreen") + coord_flip() +
+  labs(title = "Boxplot of variable injury_claim by incident_severity", x = "injury_claim") + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+```
+
+The lowest injury claims are obtained when the registered severity it's trivial. The highest medians are obtained when the severity is major or total damage, but are very near of minor damage. Surprisingly the upper whisker obtained for minor damage is longer than the one of total loss and major damage. As could be expected, this category has lower first quartile than the other two categories. Thinking about it again incident severity should be transformed into an ordered factorial.
+```{r}
+insurance$incident_severity <- ordered(insurance$incident_severity, levels = c("Trivial Damage", "Minor Damage", "Major Damage", "Total Loss"))
+```
+
+#### **34) Variable property_claim:**
+
+```{r}
+1000 - length(unique(insurance$property_claim))
+```
+374 repeated values in the variable.
+The ten most repeated are:
+```{r}
+head(sort(table(insurance$property_claim), decreasing = T), 10)
+```
+In this variable also are present observations in which a zero property claim has been filled.
+```{r}
+summary(insurance$property_claim)
+# Histogram
+ggplot(insurance, aes(x = property_claim)) + 
+  geom_histogram(color = "white", fill = "seagreen", binwidth = 900) +
+  theme_light() + labs(title = "Histogram of property_claim", x = "value") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+Again its histogram looks like a multimodal one.
+```{r}
+# Boxplot
+ggplot(insurance, aes(x = property_claim)) + geom_boxplot(color = "seagreen") + coord_flip() +
+  labs(title = "Boxplot of variable property_claim", x = "value") + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+Its boxplot indicates that the variable could have several outliers in it.
+Let's explore how the variable changes when segregated by the incident severity.
+```{r}
+# Boxplot by incident_severity
+ggplot(insurance, aes(x = property_claim, y = incident_severity)) + geom_boxplot(color = "seagreen") + coord_flip() +
+  labs(title = "Boxplot of variable property_claim by incident_severity", x = "property_claim") + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+The highest median and upper quartile are obtained for Major Damage, but the highest observation its accounted under the category minor damage. Again, as expected, trivial damage account for the lowest claims.
+
+#### **35) Variable vehicle_claim:**
+
+```{r}
+1000 - length(unique(insurance$vehicle_claim))
+```
+274 repeated values. The ten observed most often are:
+```{r}
+head(sort(table(insurance$vehicle_claim), decreasing = T), 10)
+```
+This time no observations with a zero claim are observed.
+```{r}
+summary(insurance$vehicle_claim)
+
+# Histogram
+ggplot(insurance, aes(x = vehicle_claim)) + 
+  geom_histogram(color = "white", fill = "seagreen", binwidth = 2000) +
+  theme_light() + labs(title = "Histogram of vehicle_claim", x = "value") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+This histogram looks clearly bimodal. This variable registers the highest values of all three.
+As with the previous ones, let's check also its boxplot when segregated by the incident severity.
+```{r}
+# Boxplot by incident_severity
+ggplot(insurance, aes(x = vehicle_claim, y = incident_severity)) + geom_boxplot(color = "seagreen") + coord_flip() +
+  labs(title = "Boxplot of variable vehicle_claim by incident_severity", x = "vehicle_claim") + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+Again trivial damage registers the lowest claims, and major damage registers the highest median and lower quartile, but no the longest whisker which it's under the category major damage.
+
+#### **36) Variable auto_make:**
+
+```{r}
+head(insurance$auto_make)
+length(unique(insurance$auto_make))
+insurance$auto_make <- factor(insurance$auto_make)
+```
+This variable contains car maker brands, in total there are 14 different brands. Since it's a categorical variable, we transform it into factor.
+```{r}
+# Relative frequencies barplot
+ggplot(as.data.frame(round(table(insurance$auto_make)/length(insurance$auto_make), 2)),
+       aes(x = Var1, y = Freq)) + geom_bar(stat = "identity", color = "seagreen", fill = "seagreen") +
+  labs(title = "Relative frequencies of variable auto_make", x = "state") + theme_classic() +
+  geom_text(aes(label = Freq), hjust = 1.3) + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold")) + coord_flip()
+```
+
+No car brand accounts for more than the 8 % of the observations nor less than the 6 %. There seems to be a brand misspelled (Suburu), so let's replace its name to the correct one.
+```{r}
+# First return its type to character
+insurance$auto_make <- as.character(insurance$auto_make)
+# Replace the misspelled value
+insurance$auto_make <- replace(insurance$auto_make, which(insurance$auto_make == "Suburu"), 
+                               "Subaru")
+# Make it a factor again
+insurance$auto_make <- factor(insurance$auto_make)
+```
+Let's explore now the distribution of vehicle_claim by auto make.
+```{r}
+# Boxplot
+ggplot(insurance, aes(x = auto_make, y = vehicle_claim)) + geom_boxplot(color = "seagreen") + coord_flip() +
+  labs(title = "Boxplot of variable vehicle_claim by auto make", x = "auto make") + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+Toyota takes the lowest first quartile among all brands. All the medians fluctuate in a narrow range about 40000 dollars, which seems a quite high quantity. Longer upper whiskers are encounterd in Jeep and Accura.
+
+#### **37) Variable auto_model:**
+```{r}
+head(insurance$auto_model)
+length(unique(insurance$auto_model))
+insurance$auto_model <- factor(insurance$auto_model)
+```
+There are 39 different models registered in the variable. Again let's convert its type into factor.
+Let's check now if all the models have only one brand.
+```{r}
+checkUniqueBrand <- numeric() # This variable will acount how many brans are registered for
+                              # each model. If its sum is 39, are all ok.
+for (i in levels(insurance$auto_model)) {
+  checkUniqueBrand <- c(checkUniqueBrand, length(unique(insurance$auto_make[which(insurance$auto_model == i)])))
+}
+
+sum(checkUniqueBrand)
+```
+The sum obtained is equal to number of different models, so it's ok.
+
+#### **38) Variable auto_year:**
+
+```{r}
+range(insurance$auto_year)
+```
+The range of the years in the variable goes from 1995 to 2015.
+Let's explore the frequencies of each year.
+```{r}
+# Relative frequencies barplot
+ggplot(as.data.frame(round(table(insurance$auto_year)/length(insurance$auto_year), 2)),
+       aes(x = Var1, y = Freq)) + geom_bar(stat = "identity", color = "seagreen", fill = "seagreen") +
+  labs(title = "Relative frequencies of variable auto_year", x = "state") + theme_classic() +
+  geom_text(aes(label = Freq), hjust = 1.3) + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold")) + coord_flip()
+```
+
+No year appears more than the 6 % of the observations.
+Let's explore the years obtained for each model.
+```{r}
+for (i in levels(insurance$auto_model)) {
+  cat("Model", i, "\n")
+  print(table(insurance$auto_year[which(insurance$auto_model == i)]))
+  cat("--------------------------------------------------------------\n")
+}
+```
+All models seems to have a suspiciously similar range of ages. When we search for information about them, we can find some discrepancies between the information consulted and the values obtained, for example, Ford Fusion's starting year was 2002 but here we have observations since 1995. Another example is the Saab 9-2X whose years of productioin are from 2004 to 2006 but here are observations from 1995 to 2015. So this variable don't seems very acurate with reallity.
+
+#### **39) Variable fraud_reported:**
+
+```{r}
+unique(insurance$fraud_reported)
+```
+This variable is the target variable. It only takes two values, yes and no, which let's recodify into 1 and 0 and transform its type to factor.
+```{r}
+insurance$fraud_reported <- replace(insurance$fraud_reported, which(insurance$fraud_reported == "Y"), "1")
+insurance$fraud_reported <- replace(insurance$fraud_reported, which(insurance$fraud_reported == "N"), "0")
+insurance$fraud_reported <- as.numeric(insurance$fraud_reported)
+insurance$fraud_reported <- factor(insurance$fraud_reported)
+
+# Relative frequencies barplot
+ggplot(as.data.frame(round(table(insurance$fraud_reported)/length(insurance$fraud_reported), 2)),
+       aes(x = Var1, y = Freq)) + geom_bar(stat = "identity", color = "seagreen", fill = "seagreen") +
+  labs(title = "Relative frequencies of variable fraud_reported", x = "state") + theme_classic() +
+  geom_text(aes(label = Freq), vjust = -0.3) + 
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+```
+
+As can be seen it's an imbalanced variable, only the 25 % of the observations take the positive category. We will must balance it to avoid overfitting if we want to predict this variable.
